@@ -102,10 +102,19 @@ def iniciar_chat():
 with st.sidebar:
     st.header("⚙️ Configuración")
 
-    api_key = st.text_input("API key de Gemini", type="password")
-    if api_key and st.session_state.client is None:
-        st.session_state.client = genai.Client(api_key=api_key)
+    # Intenta tomar la key desde los "Secrets" de Streamlit Cloud primero.
+    # Si no existe (ej. corriendo localmente sin configurarla), pide el campo manual.
+    api_key = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, "secrets") else None
+
+    if api_key:
+        if st.session_state.client is None:
+            st.session_state.client = genai.Client(api_key=api_key)
         st.success("Conectado a Gemini ✅")
+    else:
+        api_key_manual = st.text_input("API key de Gemini", type="password")
+        if api_key_manual and st.session_state.client is None:
+            st.session_state.client = genai.Client(api_key=api_key_manual)
+            st.success("Conectado a Gemini ✅")
 
     st.divider()
     st.header("👤 Identificar cliente")
@@ -162,6 +171,16 @@ if mensaje_usuario:
 
     with st.chat_message("assistant"):
         with st.spinner("Pensando..."):
-            respuesta = st.session_state.chat.send_message(mensaje_usuario)
-            st.markdown(respuesta.text)
-    st.session_state.historial_ui.append(("assistant", respuesta.text))
+            try:
+                respuesta = st.session_state.chat.send_message(mensaje_usuario)
+                texto_respuesta = respuesta.text
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    texto_respuesta = (
+                        "⚠️ Se alcanzó el límite de solicitudes gratuitas de la API por ahora. "
+                        "Espera un minuto y vuelve a intentar."
+                    )
+                else:
+                    texto_respuesta = f"⚠️ Ocurrió un error al conectar con el asistente: {e}"
+            st.markdown(texto_respuesta)
+    st.session_state.historial_ui.append(("assistant", texto_respuesta))
